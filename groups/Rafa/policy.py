@@ -1,5 +1,8 @@
 import math
+import atexit
+import pickle
 import time
+from pathlib import Path
 import numpy as np
 from connect4.policy import Policy
 from connect4.connect_state import ConnectState
@@ -7,28 +10,141 @@ from connect4.connect_state import ConnectState
 
 class RafaRootUCBPolicy(Policy):
     """
-    Root UCB policy para Connect-4.
+    Trial-based online policy improvement para Connect-4.
 
-    En cada turno trata las acciones legales del estado actual como brazos
-    de un bandit y reparte simulaciones con UCB hasta agotar el tiempo
-    asignado. El tiempo total se distribuye proporcionalmente entre los
-    turnos restantes estimados de la partida.
+    En cada turno corre un subproceso local q' con UCB desde el estado actual.
+    Esos valores locales no se guardan en la Q-table global; solo sirven para
+    escoger la accion del outer trial, alineado con las slides 13.
     """
 
     # Connect-4: 6 filas x 7 cols = 42 casillas maximo
     MAX_PIECES = 42
 
-    def __init__(self, total_time: float = 60.0, exploration_c: float = 1.0):
+    DEFAULT_QTABLE_PATH = Path(__file__).with_name("rafa_q_values.pkl")
+    _shared_tables: dict[Path, dict[tuple[int, ...], dict[int, list[float | int]]]] = {}
+    _dirty_updates: dict[Path, int] = {}
+    _atexit_registered = False
+
+    def __init__(
+        self,
+        total_time: float = 60.0,
+        exploration_c: float = 1.0,
+        qtable_path: str | Path | None = None,
+        auto_save: bool = True,
+        save_every_updates: int = 2_000,
+        global_prior_visits: int = 5,
+    ):
         self.total_time = total_time
         self.exploration_c = exploration_c
+        self.qtable_path = Path(qtable_path or self.DEFAULT_QTABLE_PATH).resolve()
+        self.auto_save = auto_save
+        self.save_every_updates = save_every_updates
+        self.global_prior_visits = global_prior_visits
+        self.q_table = self._load_q_table(self.qtable_path)
         self.rng = np.random.default_rng()
         self.time_remaining = self.total_time
+
+        if not self.__class__._atexit_registered:
+            atexit.register(self.__class__._save_all_dirty)
+            self.__class__._atexit_registered = True
 
     def mount(self, total_time: float = None) -> None:
         if total_time is not None:
             self.total_time = total_time
         self.rng = np.random.default_rng()
         self.time_remaining = self.total_time
+
+    @classmethod
+    def _load_q_table(
+        cls, path: Path
+    ) -> dict[tuple[int, ...], dict[int, list[float | int]]]:
+        if path in cls._shared_tables:
+            return cls._shared_tables[path]
+
+        if not path.exists():
+            cls._shared_tables[path] = {}
+            cls._dirty_updates[path] = 0
+            return cls._shared_tables[path]
+
+        with path.open("rb") as f:
+            payload = pickle.load(f)
+
+        if isinstance(payload, dict) and "q_table" in payload:
+            q_table = payload["q_table"]
+        else:
+            q_table = payload
+
+        cls._shared_tables[path] = q_table
+        cls._dirty_updates[path] = 0
+        return q_table
+
+    @classmethod
+    def _save_path(cls, path: Path, force: bool = False) -> None:
+        dirty = cls._dirty_updates.get(path, 0)
+        if not force and dirty <= 0:
+            return
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        payload = {
+            "version": 1,
+            "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "q_table": cls._shared_tables.get(path, {}),
+        }
+        with tmp_path.open("wb") as f:
+            pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp_path.replace(path)
+        cls._dirty_updates[path] = 0
+
+    @classmethod
+    def _save_all_dirty(cls) -> None:
+        for path, dirty in list(cls._dirty_updates.items()):
+            if dirty > 0:
+                cls._save_path(path, force=True)
+
+    def save_q_values(self, force: bool = True) -> None:
+        self.__class__._save_path(self.qtable_path, force=force)
+
+    def _maybe_save_q_values(self) -> None:
+        if (
+            self.auto_save
+            and self.__class__._dirty_updates.get(self.qtable_path, 0)
+            >= self.save_every_updates
+        ):
+            self.save_q_values(force=True)
+
+    def _state_key(self, board: np.ndarray, player: int) -> tuple[int, ...]:
+        # Canonical form: "1" is always the player to move, "-1" the opponent.
+        return tuple((board * player).astype(np.int8).ravel().tolist())
+
+    def _lookup(self, key: tuple[int, ...], action: int) -> tuple[float, int]:
+        q, n = self.q_table.get(key, {}).get(action, [0.0, 0])
+        return float(q), int(n)
+
+    def _global_prior(self, key: tuple[int, ...], action: int) -> tuple[float, int]:
+        q, visits = self._lookup(key, action)
+        if visits <= 0 or self.global_prior_visits <= 0:
+            return 0.0, 0
+        return q, min(visits, self.global_prior_visits)
+
+    def _record_value(
+        self,
+        key: tuple[int, ...],
+        action: int,
+        value: float,
+        alpha: float | None = None,
+    ) -> None:
+        row = self.q_table.setdefault(key, {})
+        q, n = self._lookup(key, action)
+        n += 1
+        if alpha is None:
+            q += (value - q) / n
+        else:
+            q += alpha * (value - q)
+        row[int(action)] = [float(q), int(n)]
+        self.__class__._dirty_updates[self.qtable_path] = (
+            self.__class__._dirty_updates.get(self.qtable_path, 0) + 1
+        )
 
     def _wins_immediately(self, state: ConnectState, player: int, col: int) -> bool:
         if not state.is_applicable(col):
@@ -67,13 +183,18 @@ class RafaRootUCBPolicy(Policy):
         our_turns_left = max(1, (self.MAX_PIECES - total_pieces) // 2)
         time_for_turn = min(self.time_remaining / our_turns_left, 5.0)
 
-        q_local = {a: 0.0 for a in actions}
-        n_local = {a: 0 for a in actions}
+        state_key = self._state_key(s, my_player)
+        q_local = {}
+        n_local = {}
+        for a in actions:
+            q_local[a], n_local[a] = self._global_prior(state_key, a)
 
         turn_start = time.perf_counter()
 
-        # Inicializacion: una simulacion por accion para que UCB sea valido
+        # q' local: se usa solo para decidir en este estado, no se persiste.
         for a in actions:
+            if n_local[a] > 0:
+                continue
             try:
                 q_local[a] = self._rollout(state.transition(a), my_player)
             except ValueError:
@@ -97,8 +218,9 @@ class RafaRootUCBPolicy(Policy):
             q_local[a] += (result - q_local[a]) / n_local[a]
 
         self.time_remaining -= time.perf_counter() - turn_start
-
-        return max(actions, key=lambda a: q_local[a])
+        visits = np.array([n_local[a] for a in actions], dtype=float)
+        probs = visits / visits.sum()
+        return int(self.rng.choice(actions, p=probs))
 
     def _rollout(self, state: ConnectState, my_player: int) -> float:
         """
@@ -117,3 +239,23 @@ class RafaRootUCBPolicy(Policy):
             return 0.0
         else:
             return -1.0
+
+
+class RafaNoMemoryPolicy(RafaRootUCBPolicy):
+    """
+    Misma politica online UCB de Rafa, pero sin usar Q-values globales como prior.
+    Util para demos y ablations contra RafaRootUCBPolicy.
+    """
+
+    def __init__(
+        self,
+        total_time: float = 60.0,
+        exploration_c: float = 1.0,
+        **_: object,
+    ):
+        super().__init__(
+            total_time=total_time,
+            exploration_c=exploration_c,
+            auto_save=False,
+            global_prior_visits=0,
+        )
