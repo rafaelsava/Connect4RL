@@ -6,22 +6,35 @@ from typing import Any
 
 # Libraries
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 class ConnectState(EnvironmentState):
+    __slots__ = ("board", "player", "last_move", "_winner", "_is_final")
+
     ROWS = 6
     COLS = 7
 
-    def __init__(self, board: np.ndarray | None = None, player: int = -1):
+    def __init__(
+        self,
+        board: np.ndarray | None = None,
+        player: int = -1,
+        last_move: tuple[int, int] | None = None,
+        winner: int | None = None,
+        copy_board: bool = True,
+    ):
         if board is None:
-            self.board = np.zeros((self.ROWS, self.COLS), dtype=int)
+            self.board = np.zeros((self.ROWS, self.COLS), dtype=np.int8)
         else:
-            self.board = board.copy()
-        self.player = player  # -1 = Red, 1 = Yellow type: ignore
+            self.board = board.astype(np.int8, copy=copy_board)
+        self.player = int(player)  # -1 = Red, 1 = Yellow type: ignore
+        self.last_move = last_move
+        self._winner = winner
+        self._is_final = None
 
     def is_final(self) -> bool:
-        return self.get_winner() != 0 or not any(self.board[0] == 0)
+        if self._is_final is None:
+            self._is_final = self.get_winner() != 0 or not np.any(self.board[0] == 0)
+        return self._is_final
 
     def is_applicable(self, event: Any) -> bool:
         return (
@@ -32,6 +45,15 @@ class ConnectState(EnvironmentState):
         )
 
     def get_winner(self) -> int:
+        if self._winner is not None:
+            return self._winner
+
+        if self.last_move is not None:
+            row, col = self.last_move
+            player = self.board[row, col]
+            self._winner = self._winner_from_cell(row, col, player)
+            return self._winner
+
         # Check all 4 directions
         for r in range(self.ROWS):
             for c in range(self.COLS):
@@ -43,31 +65,60 @@ class ConnectState(EnvironmentState):
                 if c + 3 < self.COLS and all(
                     self.board[r, c + i] == player for i in range(4)
                 ):
-                    return player
+                    self._winner = int(player)
+                    return self._winner
                 # Down
                 if r + 3 < self.ROWS and all(
                     self.board[r + i, c] == player for i in range(4)
                 ):
-                    return player
+                    self._winner = int(player)
+                    return self._winner
                 # Diagonal right-down
                 if (
                     r + 3 < self.ROWS
                     and c + 3 < self.COLS
                     and all(self.board[r + i, c + i] == player for i in range(4))
                 ):
-                    return player
+                    self._winner = int(player)
+                    return self._winner
                 # Diagonal left-down
                 if (
                     r + 3 < self.ROWS
                     and c - 3 >= 0
                     and all(self.board[r + i, c - i] == player for i in range(4))
                 ):
-                    return player
+                    self._winner = int(player)
+                    return self._winner
 
+        self._winner = 0
+        return self._winner
+
+    def _winner_from_cell(self, row: int, col: int, player: int) -> int:
+        if player == 0:
+            return 0
+
+        board = self.board
+        rows = self.ROWS
+        cols = self.COLS
+        for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
+            count = 1
+            for sign in (-1, 1):
+                r = row + sign * dr
+                c = col + sign * dc
+                while (
+                    0 <= r < rows
+                    and 0 <= c < cols
+                    and board[r, c] == player
+                ):
+                    count += 1
+                    r += sign * dr
+                    c += sign * dc
+            if count >= 4:
+                return int(player)
         return 0
 
     def is_col_free(self, col: int) -> bool:
-        return self.board[0, col] == 0
+        return bool(self.board[0, col] == 0)
 
     def get_heights(self) -> list[int]:
         heights = []
@@ -82,21 +133,38 @@ class ConnectState(EnvironmentState):
         return heights
 
     def get_free_cols(self) -> list[int]:
-        return [c for c in range(self.COLS) if self.is_col_free(c)]
+        return [c for c in range(self.COLS) if self.board[0, c] == 0]
 
     def transition(self, col: int) -> "ConnectState":
-        if not self.is_applicable(col):
+        if (
+            not isinstance(col, int)
+            or col < 0
+            or col >= self.COLS
+            or self.board[0, col] != 0
+            or self.is_final()
+        ):
             raise ValueError(f"Move not allowed in column {col}.")
 
         new_board = self.board.copy()
+        placed_row = -1
         for r in reversed(range(self.ROWS)):
             if new_board[r, col] == 0:
                 new_board[r, col] = self.player
+                placed_row = r
                 break
 
-        return ConnectState(new_board, -self.player)
+        winner = self._winner_from_cell(placed_row, col, self.player)
+        return ConnectState(
+            new_board,
+            -self.player,
+            (placed_row, col),
+            winner,
+            copy_board=False,
+        )
 
-    def show(self, size: int = 1500, ax: plt.Axes | None = None) -> None:
+    def show(self, size: int = 1500, ax=None) -> None:
+        import matplotlib.pyplot as plt
+
         if ax is None:
             fig, ax = plt.subplots()
         else:

@@ -32,7 +32,10 @@ class RafaRootUCBPolicy(Policy):
         qtable_path: str | Path | None = None,
         auto_save: bool = True,
         save_every_updates: int = 2_000,
-        global_prior_visits: int = 5,
+        global_prior_visits: int = 10,
+        rollout_epsilon: float = 0.15,
+        rollout_policy: str = "heuristic",
+        final_selection: str = "robust",
     ):
         self.total_time = total_time
         self.exploration_c = exploration_c
@@ -40,6 +43,9 @@ class RafaRootUCBPolicy(Policy):
         self.auto_save = auto_save
         self.save_every_updates = save_every_updates
         self.global_prior_visits = global_prior_visits
+        self.rollout_epsilon = rollout_epsilon
+        self.rollout_policy = rollout_policy
+        self.final_selection = final_selection
         self.q_table = self._load_q_table(self.qtable_path)
         self.rng = np.random.default_rng()
         self.time_remaining = self.total_time
@@ -151,6 +157,61 @@ class RafaRootUCBPolicy(Policy):
             return False
         return state.transition(col).get_winner() == player
 
+    def _actions_without_immediate_loss(self, state: ConnectState) -> list[int]:
+        actions = [c for c in state.get_free_cols() if state.is_applicable(c)]
+        safe_actions = []
+        for action in actions:
+            next_state = state.transition(action)
+            if next_state.is_final():
+                safe_actions.append(action)
+                continue
+
+            opponent = next_state.player
+            if not any(
+                self._wins_immediately(next_state, opponent, reply)
+                for reply in next_state.get_free_cols()
+            ):
+                safe_actions.append(action)
+        return safe_actions if safe_actions else actions
+
+    def _rollout_action(self, state: ConnectState) -> int:
+        actions = [c for c in state.get_free_cols() if state.is_applicable(c)]
+        if len(actions) == 1:
+            return actions[0]
+
+        player = state.player
+        for action in actions:
+            if self._wins_immediately(state, player, action):
+                return action
+
+        opponent_state = ConnectState(board=state.board, player=-player)
+        for action in actions:
+            if self._wins_immediately(opponent_state, -player, action):
+                return action
+
+        safe_actions = self._actions_without_immediate_loss(state)
+        if self.rng.random() < self.rollout_epsilon:
+            return int(self.rng.choice(safe_actions))
+
+        center_order = {3: 0, 2: 1, 4: 1, 1: 2, 5: 2, 0: 3, 6: 3}
+        best_distance = min(center_order[action] for action in safe_actions)
+        best_actions = [
+            action for action in safe_actions if center_order[action] == best_distance
+        ]
+        return int(self.rng.choice(best_actions))
+
+    def _select_robust_action(
+        self,
+        actions: list[int],
+        q_local: dict[int, float],
+        n_local: dict[int, int],
+    ) -> int:
+        if self.final_selection == "proportional":
+            visits = np.array([n_local[a] for a in actions], dtype=float)
+            probs = visits / visits.sum()
+            return int(self.rng.choice(actions, p=probs))
+        return max(actions, key=lambda a: (n_local[a], q_local[a]))
+
     def act(self, s: np.ndarray) -> int:
         my_player = -1 if np.sum(s == -1) == np.sum(s == 1) else 1
         state = ConnectState(board=s, player=my_player)
@@ -218,18 +279,18 @@ class RafaRootUCBPolicy(Policy):
             q_local[a] += (result - q_local[a]) / n_local[a]
 
         self.time_remaining -= time.perf_counter() - turn_start
-        visits = np.array([n_local[a] for a in actions], dtype=float)
-        probs = visits / visits.sum()
-        return int(self.rng.choice(actions, p=probs))
+        return self._select_robust_action(actions, q_local, n_local)
 
     def _rollout(self, state: ConnectState, my_player: int) -> float:
         """
-        Inner trial: simula la partida hasta el final con politica aleatoria.
+        Inner trial: simula la partida hasta el final con politica heuristica.
         Devuelve 1.0 (gana), 0.0 (empate) o -1.0 (pierde) para my_player.
         """
         while not state.is_final():
-            cols = state.get_free_cols()
-            col = int(self.rng.choice(cols))
+            if self.rollout_policy == "random":
+                col = int(self.rng.choice(state.get_free_cols()))
+            else:
+                col = self._rollout_action(state)
             state = state.transition(col)
 
         winner = state.get_winner()
@@ -259,3 +320,55 @@ class RafaNoMemoryPolicy(RafaRootUCBPolicy):
             auto_save=False,
             global_prior_visits=0,
         )
+
+
+class RafaBasePolicy(RafaRootUCBPolicy):
+    """
+    Version base: Root UCB con rollouts aleatorios, sin Q-table global.
+    """
+
+    def __init__(
+        self,
+        total_time: float = 60.0,
+        exploration_c: float = 1.0,
+        **_: object,
+    ):
+        super().__init__(
+            total_time=total_time,
+            exploration_c=exploration_c,
+            auto_save=False,
+            global_prior_visits=0,
+            rollout_policy="random",
+            final_selection="proportional",
+        )
+
+
+class RafaQPolicy(RafaRootUCBPolicy):
+    """
+    Version intermedia: misma base, pero usando Q-table global como prior.
+    """
+
+    def __init__(
+        self,
+        total_time: float = 60.0,
+        exploration_c: float = 1.0,
+        qtable_path: str | Path | None = None,
+        **_: object,
+    ):
+        super().__init__(
+            total_time=total_time,
+            exploration_c=exploration_c,
+            qtable_path=qtable_path,
+            auto_save=False,
+            global_prior_visits=5,
+            rollout_policy="random",
+            final_selection="proportional",
+        )
+
+
+class RafaImprovedPolicy(RafaRootUCBPolicy):
+    """
+    Version final: Q global como prior, rollouts heuristicos y seleccion robusta.
+    """
+
+    pass

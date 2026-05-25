@@ -9,6 +9,7 @@ class EnvironmentState(ABC):
     """
     Abstract base class representing the state of a reinforcement learning environment.
     """
+    __slots__ = ()
 
     @abstractmethod
     def is_final(self) -> bool:

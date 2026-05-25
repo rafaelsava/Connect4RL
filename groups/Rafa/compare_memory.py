@@ -204,7 +204,7 @@ def main() -> None:
     )
     parser.add_argument("--games-head-to-head", type=int, default=25, help="Partidas por lado entre variantes.")
     parser.add_argument("--total-time", type=float, default=2.0, help="Tiempo por partida para cada policy.")
-    parser.add_argument("--global-prior-visits", type=int, default=5)
+    parser.add_argument("--global-prior-visits", type=int, default=10)
     parser.add_argument("--log-every", type=int, default=5, help="Muestra progreso cada N partidas.")
     parser.add_argument("--seed", type=int, default=911)
     parser.add_argument("--qtable", type=Path, default=RafaRootUCBPolicy.DEFAULT_QTABLE_PATH)

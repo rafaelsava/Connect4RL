@@ -118,9 +118,7 @@ def choose_action_ucb_rollout(
         q_local[action] += (result - q_local[action]) / n_local[action]
         actual_rollouts += 1
 
-    visits = np.array([n_local[action] for action in actions], dtype=float)
-    probs = visits / visits.sum()
-    return int(rng.choice(actions, p=probs))
+    return agent._select_robust_action(actions, q_local, n_local)
 
 
 def play_outer_trial(
@@ -298,7 +296,7 @@ def main() -> None:
     parser.add_argument(
         "--global-prior-visits",
         type=int,
-        default=5,
+        default=10,
         help="Peso maximo de visitas heredadas desde la Q-table global hacia q' local.",
     )
     parser.add_argument(
