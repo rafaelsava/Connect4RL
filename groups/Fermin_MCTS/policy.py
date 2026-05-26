@@ -60,13 +60,13 @@ class Node:
         ).action
 
 
-class Tongue(Policy):
+class Head(Policy):
     """Politica online basada exclusivamente en MCTS puro con UCB1."""
 
     EXPLORATION = math.sqrt(2.0)
-    GLOBAL_TIME_LIMIT = 55.0
-    TURN_TIME_LIMIT = 1.8
-    MIN_TURN_BUDGET = 0.02
+    GLOBAL_TIME_LIMIT = 58.0
+    TURN_TIME_LIMIT = 2.0
+    MIN_TURN_BUDGET = 0.05
 
     def mount(self, action_timeout=None) -> None:
         self.time_spent = 0.0
