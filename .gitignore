@@ -1,0 +1,9 @@
+.env
+env/
+__pycache__/
+*.pyc
+
+versus/*
+!versus/benchmark_entrega.csv
+!versus/benchmark_entrega_partidas.csv
+*.csv

@@ -3,7 +3,7 @@ from connect4.policy import Policy
 from typing import override
 
 
-class Aha(Policy):
+class OhYes(Policy):
 
     @override
     def mount(self) -> None:
