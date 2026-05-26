@@ -8,7 +8,7 @@ from connect4.policy import Policy
 from connect4.connect_state import ConnectState
 
 
-class RafaRootUCBPolicy(Policy):
+class RafaRootUCBPolicy:
     """
     Politica final de Rafa: TBOPI con Q-table global como prior.
 
@@ -367,7 +367,7 @@ class RafaQPolicy(RafaRootUCBPolicy):
         )
 
 
-class RafaImprovedPolicy(RafaRootUCBPolicy):
+class RafaImprovedPolicy(RafaRootUCBPolicy, Policy):
     """
     Alias explicito de la politica final para scripts de analisis.
     """
