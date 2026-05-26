@@ -58,7 +58,6 @@ python "groups/Group B/train_agent.py" --preset self_heavy
 
 Presets disponibles:
 
-- `random_bootstrap`
 - `self_only`
 - `self_heavy`
 - `self_refine`
