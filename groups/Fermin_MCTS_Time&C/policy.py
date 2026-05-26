@@ -38,7 +38,7 @@ class Node:
             if child.visits == 0:
                 return float("inf")
             exploitation = child.value / child.visits
-            # UCB1 puro de la jerarquia de arboles visto en clase
+            # UCB1 puro — C constante sin decay artificial (FIX #2)
             exploration_term = exploration * math.sqrt(log_parent / child.visits)
             return exploitation + exploration_term
 
@@ -55,7 +55,6 @@ class Node:
         if not self.children:
             return random.choice(self.state.get_free_cols())
 
-        # Desempate de calidad: Robustez (visitas) respaldada por tasa de exito (Q/N)
         return max(
             self.children.values(),
             key=lambda child: (child.visits, child.value / child.visits if child.visits else -float("inf")),
@@ -63,12 +62,12 @@ class Node:
 
 
 class Eyes(Policy):
-    """Politica optimizada basada en MCTS con gestion de tiempo y rollout hibrido."""
+    """Politica optimizada basada en MCTS con gestion de tiempo adaptativa y rollout hibrido."""
 
-    EXPLORATION = math.sqrt(2.0)
-    GLOBAL_TIME_LIMIT = 58.0
-    TURN_TIME_LIMIT = 1.8
-    MIN_TURN_BUDGET = 0.05
+    EXPLORATION = math.sqrt(2.0)        # C constante y puro (FIX #2)
+    GLOBAL_TIME_LIMIT = 58.0            # Margen de seguridad sobre 60s (FIX #1)
+    TURN_TIME_LIMIT = 1.8               # Presupuesto base por turno
+    MIN_TURN_BUDGET = 0.05              # Minimo para no gastar tiempo en nada
 
     def mount(self, action_timeout=None) -> None:
         self.time_spent = 0.0
@@ -89,62 +88,97 @@ class Eyes(Policy):
         if len(legal_actions) == 1:
             return legal_actions[0]
 
-        # Reflejo de victoria inmediata (Costo minimo en la raiz)
+        # Reflejo de victoria inmediata
         winning_action = self._winning_action(root_state)
         if winning_action is not None:
             return winning_action
 
-        # Escudo defensivo inmediato (Evitar perder en el siguiente turno)
+        # Escudo defensivo inmediato
         root_actions = self._actions_without_immediate_loss(root_state)
         if len(root_actions) == 1:
             return root_actions[0]
 
-        # --- GESTION DINAMICA E INTELIGENTE DEL TIEMPO ---
+        # --- GESTION DINAMICA DE TIEMPO (FIX #1) ---
         remaining_global_time = self.GLOBAL_TIME_LIMIT - self.time_spent
         if remaining_global_time <= self.MIN_TURN_BUDGET:
             return random.choice(root_actions)
 
-        pieces_played = int(np.count_nonzero(board))
-        if pieces_played < 4:  # Reducido el umbral para no agotar el reloj global rápido
-            base_budget = 2.5   
-        elif len(legal_actions) <= 2:
-            base_budget = 0.3   # Endgame super veloz para ahorrar tiempo
-        else:
-            base_budget = self.TURN_TIME_LIMIT
-
-        budget = min(base_budget, remaining_global_time - self.MIN_TURN_BUDGET)
-        if budget <= 0:
-            return random.choice(root_actions)
-
+        # Primera pasada corta para medir incertidumbre real
         start_time = time.time()
-        end_time = start_time + budget
         root = Node(root_state, actions=root_actions)
+        first_pass_end = start_time + 0.08
+        while time.time() < first_pass_end:
+            self._run_mcts_iteration(root)
 
-        # --- CICLO MCTS PRINCIPAL ---
+        # Calcular budget adaptativo con datos reales del arbol
+        budget = self._compute_budget(
+            root,
+            root_actions,
+            int(np.count_nonzero(board)),
+            remaining_global_time,
+        )
+
+        # Segunda pasada con el presupuesto ya ajustado
+        end_time = start_time + budget
         while time.time() < end_time:
-            node = root
-
-            # 1. Selection con caida de C suavizada para evitar sesgos tempranos
-            while (
-                not node.state.is_final()
-                and node.is_fully_expanded()
-                and node.children
-            ):
-                dynamic_c = self.EXPLORATION / (1.0 + 0.15 * node.depth) # Caida mas suave
-                node = node.ucb1_child(dynamic_c)
-
-            # 2. Expansion
-            if not node.state.is_final() and not node.is_fully_expanded():
-                node = node.expand()
-
-            # 3. Simulation (Rollout Hibrido: Veloz pero con control selectivo)
-            winner = self._rollout(node.state)
-
-            # 4. Backpropagation
-            self._backpropagate(node, winner)
+            self._run_mcts_iteration(root)
 
         self.time_spent += time.time() - start_time
         return int(root.best_action())
+
+    def _compute_budget(
+        self,
+        root: Node,
+        legal_actions: list[int],
+        pieces_played: int,
+        remaining_global: float,
+    ) -> float:
+        # Factor de fase del juego
+        if pieces_played < 8:
+            phase_factor = 0.5      # Apertura: posiciones simétricas y similares
+        elif pieces_played > 32:
+            phase_factor = 0.6      # Endgame: pocas ramas reales
+        else:
+            phase_factor = 1.0      # Midgame: maxima complejidad tactica
+
+        # Factor de ramificacion: mas columnas = mas espacio a explorar
+        branch_factor = len(legal_actions) / 7.0
+
+        base = self.TURN_TIME_LIMIT * phase_factor * branch_factor
+
+        # Ajuste por incertidumbre real tras la primera pasada
+        if root.visits > 30 and root.children:
+            best = max(root.children.values(), key=lambda c: c.visits)
+            best_ratio = best.visits / max(1, root.visits)
+
+            if best_ratio > 0.6:
+                base *= 0.5     # Un movimiento domina claramente → recortar
+            elif best_ratio < 0.3:
+                base *= 1.3     # Posicion muy reñida → extender
+
+        return min(base, remaining_global - self.MIN_TURN_BUDGET)
+
+    def _run_mcts_iteration(self, root: Node) -> None:
+        """Una iteracion completa de MCTS: selection, expansion, simulation, backprop."""
+        node = root
+
+        # 1. Selection — UCB1 puro con C constante (FIX #2)
+        while (
+            not node.state.is_final()
+            and node.is_fully_expanded()
+            and node.children
+        ):
+            node = node.ucb1_child(self.EXPLORATION)
+
+        # 2. Expansion
+        if not node.state.is_final() and not node.is_fully_expanded():
+            node = node.expand()
+
+        # 3. Simulation — rollout hibrido con dos reflejos (FIX #3)
+        winner = self._rollout(node.state)
+
+        # 4. Backpropagation
+        self._backpropagate(node, winner)
 
     def _infer_current_player(self, board: np.ndarray) -> int:
         red_count = int(np.count_nonzero(board == -1))
@@ -162,29 +196,41 @@ class Eyes(Policy):
         return self.TURN_TIME_LIMIT
 
     def _rollout(self, state: ConnectState) -> int:
-        """Rollout optimizado de alta velocidad computacional."""
+        """Rollout hibrido: dos reflejos tacticos en un solo loop (FIX #3).
+        
+        En cada paso, en orden de prioridad:
+          1. Si puedo ganar ahora → hazlo.
+          2. Si el rival gana si no bloqueo → bloquea.
+          3. Si no → movimiento aleatorio.
+        """
         current = state
-        # Reducimos drásticamente las llamadas pesadas dentro del bucle crítico
+
         while not current.is_final():
-            legal_actions = current.get_free_cols()
-            
-            # Heurística ligera de una sola vía: si hay oportunidad de ganar el juego en este paso, tómala.
-            # Omitimos la simulación del espejo del oponente dentro del rollout porque consume demasiado CPU.
+            legal = current.get_free_cols()
             player = current.player
-            chosen_action = None
-            
-            # Solo el 10% de las veces hacemos la verificacion tactica ligera para no matar la velocidad
-            if random.random() > 0.9:
-                for action in legal_actions:
-                    next_s = current.transition(action)
-                    if next_s.is_final() and next_s.get_winner() == player:
-                        chosen_action = action
-                        break
-            
-            if chosen_action is None:
-                chosen_action = random.choice(legal_actions)
-                
-            current = current.transition(chosen_action)
+            opponent = -player
+
+            forced = None
+            must_block = None
+
+            for action in legal:
+                next_s = current.transition(action)
+                if not next_s.is_final():
+                    continue
+                winner = next_s.get_winner()
+                if winner == player:
+                    forced = action     # Victoria inmediata → salir del loop
+                    break
+                if winner == opponent:
+                    must_block = action # Amenaza del rival → anotar y seguir buscando victoria
+
+            if forced is not None:
+                current = current.transition(forced)
+            elif must_block is not None:
+                current = current.transition(must_block)
+            else:
+                current = current.transition(random.choice(legal))
+
         return current.get_winner()
 
     def _winning_action(self, state: ConnectState) -> int | None:
