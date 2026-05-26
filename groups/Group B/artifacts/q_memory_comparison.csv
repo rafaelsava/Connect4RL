@@ -1,0 +1,17 @@
+strategy,episodes,train_mode,train_epsilon,opponent,games,wins,losses,draws,win_rate,loss_rate,draw_rate,stored_states
+from_scratch,1000,random,0.2,Random,100,98,2,0,0.98,0.02,0.0,29500
+from_scratch,1000,random,0.2,Self,100,0,0,100,0.0,0.0,1.0,29500
+from_scratch,3500,random,0.2,Random,100,99,1,0,0.99,0.01,0.0,89807
+from_scratch,3500,random,0.2,Self,100,50,50,0,0.5,0.5,0.0,89807
+from_scratch,5000,random,0.2,Random,100,99,1,0,0.99,0.01,0.0,127199
+from_scratch,5000,random,0.2,Self,100,50,50,0,0.5,0.5,0.0,127199
+from_scratch,10000,random,0.2,Random,100,99,1,0,0.99,0.01,0.0,246996
+from_scratch,10000,random,0.2,Self,100,50,50,0,0.5,0.5,0.0,246996
+incremental_q_memory,1000,random,0.2,Random,100,97,3,0,0.97,0.03,0.0,5255
+incremental_q_memory,1000,random,0.2,Self,100,50,50,0,0.5,0.5,0.0,5255
+incremental_q_memory,3500,random,0.2,Random,100,99,1,0,0.99,0.01,0.0,17267
+incremental_q_memory,3500,random,0.2,Self,100,0,0,100,0.0,0.0,1.0,17267
+incremental_q_memory,5000,random,0.2,Random,100,100,0,0,1.0,0.0,0.0,24169
+incremental_q_memory,5000,random,0.2,Self,100,50,50,0,0.5,0.5,0.0,24169
+incremental_q_memory,10000,random,0.2,Random,100,99,1,0,0.99,0.01,0.0,46636
+incremental_q_memory,10000,random,0.2,Self,100,50,50,0,0.5,0.5,0.0,46636

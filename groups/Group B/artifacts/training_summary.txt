@@ -1,0 +1,10 @@
+{'model_path': 'C:\\Users\\tabut\\OneDrive\\Escritorio\\Fundamentos de '
+               'IA\\Proyecto-Final\\Connect4RL\\groups\\Group '
+               'B\\fvmc_model.pkl',
+ 'loaded_existing_model': True,
+ 'run': {'preset': 'self_refine',
+         'phases': [{'mode': 'self', 'episodes': 10000, 'epsilon': 0.08},
+                    {'mode': 'self', 'episodes': 5000, 'epsilon': 0.03}]},
+ 'stored_states': 1252691,
+ 'training_summary': {'episodes_trained': 152000,
+                      'sources': {'random': 32000, 'self': 120000}}}
