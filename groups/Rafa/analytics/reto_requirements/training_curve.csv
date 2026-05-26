@@ -1,0 +1,6 @@
+trained_games,q_states,q_entries,random_red_win_rate,random_red_loss_rate,random_yellow_win_rate,random_yellow_loss_rate
+0,0,0,1.0,0.0,0.9,0.1
+50,1253,1305,1.0,0.0,1.0,0.0
+100,2391,2500,1.0,0.0,1.0,0.0
+250,5679,5952,1.0,0.0,0.9,0.1
+500,9624,10126,1.0,0.0,1.0,0.0

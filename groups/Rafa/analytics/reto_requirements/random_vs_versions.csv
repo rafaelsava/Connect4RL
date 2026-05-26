@@ -1,0 +1,7 @@
+version,color,opponent,total_time,games,wins,losses,draws,win_rate,loss_rate,draw_rate,avg_moves
+RafaBase,red,Random,2.0,20,20,0,0,1.0,0.0,0.0,10.1
+RafaBase,yellow,Random,2.0,20,20,0,0,1.0,0.0,0.0,15.6
+RafaQ,red,Random,2.0,20,20,0,0,1.0,0.0,0.0,12.8
+RafaQ,yellow,Random,2.0,20,20,0,0,1.0,0.0,0.0,13.9
+RafaImproved,red,Random,2.0,20,20,0,0,1.0,0.0,0.0,12.4
+RafaImproved,yellow,Random,2.0,20,20,0,0,1.0,0.0,0.0,16.7

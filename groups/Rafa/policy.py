@@ -10,11 +10,12 @@ from connect4.connect_state import ConnectState
 
 class RafaRootUCBPolicy(Policy):
     """
-    Trial-based online policy improvement para Connect-4.
+    Politica final de Rafa: TBOPI con Q-table global como prior.
 
     En cada turno corre un subproceso local q' con UCB desde el estado actual.
-    Esos valores locales no se guardan en la Q-table global; solo sirven para
-    escoger la accion del outer trial, alineado con las slides 13.
+    La Q-table entrenada por self-play inicializa ese proceso local; luego los
+    rollouts heuristicos refinan la decision y se elige la accion robusta con
+    mas visitas locales.
     """
 
     # Connect-4: 6 filas x 7 cols = 42 casillas maximo
@@ -368,7 +369,7 @@ class RafaQPolicy(RafaRootUCBPolicy):
 
 class RafaImprovedPolicy(RafaRootUCBPolicy):
     """
-    Version final: Q global como prior, rollouts heuristicos y seleccion robusta.
+    Alias explicito de la politica final para scripts de analisis.
     """
 
     pass

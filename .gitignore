@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local training artifacts can be very large and are regenerated outside git.
+groups/Rafa/rafa_q_values.pkl
+groups/Rafa/*.pkl
+groups/Rafa/analytics/**/*.png

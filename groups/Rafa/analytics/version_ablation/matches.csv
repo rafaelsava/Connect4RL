@@ -1,0 +1,4 @@
+run_started_at,agent_a,agent_b,a_wins,b_wins,draws,games
+2026-05-25 15:05:39,RafaBase,RafaImproved,4,5,1,10
+2026-05-25 15:17:32,RafaBase,RafaQ,3,7,0,10
+2026-05-25 15:30:26,RafaImproved,RafaQ,7,3,0,10
