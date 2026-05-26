@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 
 versus/*
+*.csv
 !versus/benchmark_entrega.csv
 !versus/benchmark_entrega_partidas.csv
-*.csv
+!versus/self_play_head_games.csv
+!versus/self_play_head_summary.csv
