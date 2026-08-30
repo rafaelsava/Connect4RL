@@ -86,6 +86,9 @@ The board uses `0` for empty cells, `-1` for red and `1` for yellow.
 - Unit tests for terminal-state detection and tactical filters.
 - Parallel tournament execution and performance profiling.
 
-## Author
+## Contributors
 
-[Rafael Salcedo](https://github.com/rafaelsava) · Computer Engineering · AI and reinforcement-learning projects.
+- [Rafael Salcedo](https://github.com/rafaelsava): created the initial Connect Four environment, policy interface, dynamic policy discovery and tournament runner; maintains the repository documentation.
+- [Fermin Escalona](https://github.com/FerminEscalona): developed and refined the MCTS policy variants, timing and safe-action logic, experiments and final policy organization.
+
+This is a collaborative academic project. The commit history is the source of truth for individual code contributions.
