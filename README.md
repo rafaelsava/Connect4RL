@@ -1,176 +1,91 @@
-# Connect4RL: politica final con MCTS
+# Connect4RL
 
-Este repositorio ejecuta partidas de Conecta 4 entre politicas ubicadas en
-`groups/`. La politica de `groups/Final/policy.py` implementa un agente
-`Head` basado en Monte Carlo Tree Search (MCTS) con UCB1, complementado con
-reglas tacticas para jugar victorias inmediatas y evitar derrotas en el
-siguiente turno.
+![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
+![MCTS](https://img.shields.io/badge/Search-MCTS%20%2B%20UCB1-6C63FF)
+![Status](https://img.shields.io/badge/status-academic%20project-2E8B57)
 
-El punto de entrada del proyecto es `main.py`. Este archivo busca
-automaticamente todas las clases que heredan de `connect4.policy.Policy`
-dentro de `groups/`, arma un torneo y reporta al campeon. Por esta razon,
-`groups/Final/policy.py` no se corre directamente como un script: se carga al
-ejecutar el torneo.
+A tournament framework for Connect Four decision policies, featuring a time-bounded Monte Carlo Tree Search agent with UCB1 and tactical safety checks.
 
-## Estructura relevante
+## Why this project
+
+Connect Four is small enough to reason about, but large enough to expose the trade-off between planning depth, exploration and strict decision-time budgets. This repository provides a reusable environment for loading policies dynamically, running head-to-head matches and recording every game as JSON.
+
+## Final policy
+
+`groups/Final/policy.py` implements the `Head` agent:
+
+1. **Immediate tactics**: take a winning move when available.
+2. **One-step safety**: avoid actions that allow an immediate opponent win whenever a safe alternative exists.
+3. **Selection**: traverse expanded nodes using UCB1.
+4. **Expansion**: add one unexplored legal action.
+5. **Simulation**: finish the game with random rollouts.
+6. **Backpropagation**: update visits and alternating-player rewards.
+7. **Final decision**: return the most visited action, breaking ties by mean value.
+
+## Search budget
+
+| Parameter | Default | Purpose |
+| --- | ---: | --- |
+| Exploration constant | `sqrt(2)` | Balance exploitation and exploration |
+| Per-turn budget | `2.0 s` | Normal planning time per action |
+| Global budget | `58.0 s` | Maximum accumulated search time |
+| Minimum reserve | `0.05 s` | Preserve enough time to return a legal action |
+
+## Project structure
 
 ```text
-Connect4RL/
-|-- main.py                    # Descubre politicas y ejecuta el torneo
-|-- tournament.py              # Organiza rondas, juega partidas y guarda resultados
+.
+|-- main.py                  # Discovers policies and starts a tournament
+|-- tournament.py            # Match execution and JSON result storage
 |-- connect4/
-|   |-- connect_state.py       # Estado, movimientos legales y ganador del juego
-|   |-- policy.py              # Interfaz base de las politicas
-|   `-- utils.py               # Descubrimiento dinamico de politicas
-|-- groups/
-|   |-- Final/policy.py        # Politica Head (MCTS + reglas tacticas)
-|   `-- Random/policy.py       # Rival aleatorio de ejemplo
-`-- versus/                    # Archivos JSON producidos por los enfrentamientos
+|   |-- connect_state.py     # Board state, transitions and winner detection
+|   |-- environment_state.py
+|   |-- policy.py            # Policy interface
+|   `-- utils.py             # Dynamic policy discovery
+`-- groups/
+    |-- Final/policy.py      # MCTS + tactical safeguards
+    `-- Random/policy.py     # Random baseline
 ```
 
-## Requisitos
-
-- Python 3.12 o superior. `main.py` tambien carga la politica `Random`, que
-  utiliza `typing.override`, disponible desde Python 3.12.
-- `numpy`, para representar estados y escoger movimientos.
-- `matplotlib`, importado por la visualizacion de `ConnectState`.
-- `pydantic` 2.x, para serializar los resultados de cada enfrentamiento.
-
-## Crear el entorno e instalar dependencias
-
-Desde la raiz del repositorio:
+## Quick start
 
 ```bash
-python3 -m venv env
-source env/bin/activate
-python -m pip install --upgrade pip
-python -m pip install numpy matplotlib "pydantic>=2"
-```
-
-En Windows PowerShell, la activacion del entorno es:
-
-```powershell
-.\env\Scripts\Activate.ps1
-```
-
-Para comprobar que la politica final puede importarse:
-
-```bash
-python -c "from groups.Final.policy import Head; print(Head.__name__)"
-```
-
-La salida esperada es `Head`.
-
-## Ejecutar la politica en el torneo
-
-Con el entorno activo y desde la raiz del proyecto:
-
-```bash
+git clone https://github.com/rafaelsava/Connect4RL.git
+cd Connect4RL
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 python main.py
 ```
 
-`main.py` detecta al menos estas dos politicas:
+On Windows PowerShell, activate with `.\.venv\Scripts\Activate.ps1`.
 
-- `Final`: la clase `Head` definida en `groups/Final/policy.py`.
-- `Random`: la clase `OhYes` definida en `groups/Random/policy.py`.
+The runner discovers every class derived from `connect4.policy.Policy` under `groups/`, builds the bracket and prints the champion. Match histories are written to `versus/` as JSON.
 
-El programa muestra los enfrentamientos, los ganadores de cada ronda y una
-linea final con el campeon:
+## Add your own policy
 
-```text
-Initial Matches: ...
-Winners this round: ...
-Champion: ...
-```
+1. Create `groups/<PolicyName>/policy.py`.
+2. Implement a class derived from `Policy`.
+3. Provide `mount(action_timeout=None)` and `act(board)`.
+4. Return a legal column index from `0` to `6`.
+5. Run `python main.py`; discovery is automatic.
 
-Cada enfrentamiento tambien genera un archivo JSON en `versus/`, con los
-tableros y acciones de las partidas disputadas.
+The board uses `0` for empty cells, `-1` for red and `1` for yellow.
 
-La politica final busca durante hasta aproximadamente 2 segundos por turno y
-mantiene un limite acumulado de 58 segundos por instancia. Por ello, ejecutar
-el torneo completo puede tardar varios minutos dependiendo de la cantidad y
-duracion de las partidas.
+## Reproducibility notes
 
-## Como funciona `groups/Final/policy.py`
+- Rollouts and bracket order use randomness, so repeated tournaments can differ.
+- The current implementation does not expose a global random seed.
+- Runtime depends on the number of policies, game duration and configured action limits.
+- Tournament results should be reported across multiple runs rather than from a single bracket.
 
-### Interfaz `Head`
+## Possible extensions
 
-`Head` hereda de `Policy`, por lo que expone dos metodos usados por el
-torneo:
+- Seeded experiment runs and aggregate win-rate reporting.
+- First-Visit Monte Carlo and TBOPI baselines under the same interface.
+- Unit tests for terminal-state detection and tactical filters.
+- Parallel tournament execution and performance profiling.
 
-- `mount(action_timeout=None)`: inicializa el tiempo usado por el agente y
-  configura el presupuesto disponible por turno.
-- `act(s)`: recibe el tablero como un arreglo `numpy`, decide una columna
-  legal y devuelve su indice entre `0` y `6`.
+## Author
 
-El tablero usa la representacion de `ConnectState`: `0` es una celda vacia,
-`-1` corresponde al jugador rojo y `1` al amarillo. La politica cuenta las
-fichas del tablero para inferir a quien le corresponde jugar.
-
-### Decisiones tacticas antes de buscar
-
-Antes de iniciar MCTS, `act()` resuelve situaciones directas:
-
-1. Si solo queda una columna legal, la devuelve inmediatamente.
-2. `_winning_action()` comprueba si existe un movimiento que gane en el turno
-   actual y lo juega.
-3. `_actions_without_immediate_loss()` descarta movimientos que permitirian
-   al rival ganar inmediatamente en el turno siguiente, siempre que exista
-   alguna alternativa segura.
-
-Esto evita gastar tiempo de busqueda en jugadas evidentes y reduce errores
-tacticos de un rollout puramente aleatorio.
-
-### Arbol MCTS y clase `Node`
-
-Cada `Node` representa un estado alcanzado despues de realizar una accion y
-almacena:
-
-- `children`: hijos ya creados para acciones exploradas.
-- `untried_actions`: columnas legales que aun no se han expandido.
-- `visits`: numero de simulaciones que pasaron por el nodo.
-- `value`: recompensa acumulada desde la perspectiva del jugador que acaba
-  de mover.
-
-Durante el presupuesto de tiempo asignado, la politica repite las cuatro
-fases clasicas de MCTS:
-
-1. **Seleccion**: `ucb1_child()` elige entre hijos expandidos equilibrando
-   recompensa media y exploracion con UCB1.
-2. **Expansion**: `expand()` crea un hijo a partir de una accion aun no
-   probada.
-3. **Simulacion**: `_rollout()` completa la partida usando movimientos
-   aleatorios hasta encontrar victoria o empate.
-4. **Retropropagacion**: `_backpropagate()` actualiza visitas y recompensas
-   desde el nodo simulado hasta la raiz.
-
-Al agotarse el tiempo, `best_action()` selecciona la accion mas visitada; si
-hay empate practico, favorece la de mejor recompensa promedio.
-
-### Control de tiempo
-
-Las constantes principales de `Head` son:
-
-| Constante | Valor | Proposito |
-| --- | ---: | --- |
-| `EXPLORATION` | `sqrt(2)` | Peso exploratorio de UCB1. |
-| `GLOBAL_TIME_LIMIT` | `58.0` s | Maximo acumulado de busqueda del agente. |
-| `TURN_TIME_LIMIT` | `2.0` s | Presupuesto normal para una accion. |
-| `MIN_TURN_BUDGET` | `0.05` s | Margen minimo reservado para poder responder. |
-
-Si el presupuesto global esta por agotarse, la politica deja de simular y
-escoge una accion valida entre las previamente filtradas.
-
-## Flujo completo de una ejecucion
-
-1. `main.py` usa `find_importable_classes("groups", Policy)` para importar
-   las politicas participantes.
-2. `run_tournament()` construye los emparejamientos y ejecuta cada ronda.
-3. Antes de cada partida, `play()` instancia las politicas y llama a
-   `mount()`.
-4. En cada turno, la politica activa recibe `state.board` y responde mediante
-   `act()`.
-5. `ConnectState.transition()` aplica la accion y alterna el jugador hasta
-   que haya cuatro fichas conectadas o se llene el tablero.
-6. El historial del enfrentamiento se guarda como JSON en `versus/` y el
-   torneo continua hasta imprimir al campeon.
+[Rafael Salcedo](https://github.com/rafaelsava) · Computer Engineering · AI and reinforcement-learning projects.
